@@ -72,23 +72,24 @@ end
 ;    
 ; :Params:
 ;    h5           [in, req, Hash] : h5 file structure, Hash() object.
-;    dataSetName  [in, req, IDL_String] : Data set name.
+;    data_set_name  [in, req, IDL_String] : Data set name.
 ;    
 ; :Returns:
 ;    ENVIRasterMetadata
 ;-
-function AOPh5MetadataFactory::CreateMetadata, h5, dataSetName
+function AOPh5MetadataFactory::CreateMetadata, h5, dataset_name
   compile_opt static, idl2
   
   metadata = !null
   
-  dataSetNameUpper = dataSetName.toUpper()
+  dataset_name_parts = strsplit(dataset_name, '/', /EXTRACT)
+  name_key = strupcase(dataset_name_parts[-1])
   
-  case (dataSetNameUpper) of
-    'REFLECTANCE': metadata = AOPh5MetadataFactory._Reflectance(h5, dataSetNameUpper)
-    'DARK_DENSE_VEGETATION_CLASSIFICATION' : metadata = AOPh5MetadataFactory._Class(h5, dataSetNameUpper)
-    'HAZE_CLOUD_WATER_MAP' : metadata = AOPh5MetadataFactory._Class(h5, dataSetNameUpper)
-    else: metadata = AOPh5MetadataFactory._Raster(h5, dataSetNameUpper)
+  case (name_key) of
+    'REFLECTANCE_DATA': metadata = AOPh5MetadataFactory._Reflectance(h5, dataset_name)
+    'DARK_DENSE_VEGETATION_CLASSIFICATION' : metadata = AOPh5MetadataFactory._Class(h5, dataset_name)
+    'HAZE_CLOUD_WATER_MAP' : metadata = AOPh5MetadataFactory._Class(h5, dataset_name)
+    else: metadata = AOPh5MetadataFactory._Raster(h5, dataset_name)
   endcase
   
   return, metadata
@@ -104,30 +105,34 @@ end
 ;-
 function AOPh5MetadataFactory::CreateSpatialRef, h5
   compile_opt static, idl2
+  
+  ; Get the site key
+  site = _find_site_key(h5)
     
   ; Get coordinate system information
-  mapStuff = strsplit((h5['MAP_INFO','_DATA'])[0], ',', /EXTRACT)
-  coordSysString = (h5['COORDINATE_SYSTEM_STRING','_DATA'])[0]
+  map_info = h5[site, 'REFLECTANCE', 'METADATA', 'COORDINATE_SYSTEM', 'MAP_INFO','_DATA', 0]
+  map_info_parts = strsplit(map_info, ',', /EXTRACT)
+  coord_sys_string = h5[site, 'REFLECTANCE', 'METADATA', 'COORDINATE_SYSTEM', 'COORDINATE_SYSTEM_STRING','_DATA', 0]
   
   ; Get the pixel size
-  ps = double(mapStuff[5:6])
+  ps = double(map_info_parts[5:6])
   
   ; Get the pixel tie point
-  tp = double(mapStuff[1:2])
+  tp = double(map_info_parts[1:2])
   
   ; Get the map tie point
-  tm = double(mapStuff[3:4])
+  tm = double(map_info_parts[3:4])
   
   ; Get the rotation, if any
-  if (mapStuff[-1].Contains('rotation')) then begin
-    rotation = double((strsplit(mapStuff[-1],'=', /EXTRACT))[-1])
+  if (map_info_parts[-1].Contains('rotation')) then begin
+    rotation = double((strsplit(map_info_parts[-1],'=', /EXTRACT))[-1])
   endif else begin
     rotation = !null
   endelse
   
   ; Create the spatial ref object
   spatialRef = ENVIStandardRasterSpatialRef( $
-    COORD_SYS_STR=coordSysString, $
+    COORD_SYS_STR=coord_sys_string, $
     PIXEL_SIZE=ps, $
     TIE_POINT_MAP=tm, $
     TIE_POINT_PIXEL=[0,0], $
@@ -155,24 +160,41 @@ end
 ;
 ; :Params:
 ;    h5           [in, req, Hash] : h5 file structure, Hash() object.
-;    dataSetName  [in, req, IDL_String] : Data set name.
+;    data_set_name  [in, req, IDL_String] : Data set name.
 ;
 ; :Returns:
 ;    ENVIRasterMetadata
 ;-
-function AOPh5MetadataFactory::_Reflectance, h5, dataSetName
+function AOPh5MetadataFactory::_Reflectance, h5, data_set_name
   compile_opt static, idl2
 
   metadata = envirastermetadata()
+  
+  ; Get the site key
+  site = _find_site_key(h5)
 
   ; Wavelength / Spectral Radiance Bands
-  metadata.AddItem, 'wavelength', h5_getdata(h5['_FILE'], '/' + h5['WAVELENGTH','_NAME'])
-  metadata.AddItem, 'wavelength units', h5['WAVELENGTH','UNIT','_DATA']
+  wavelength_key = '/' + h5[site, '_NAME'] + $
+    '/' + h5[site, 'REFLECTANCE', '_NAME'] + $
+    '/' + h5[site, 'REFLECTANCE', 'METADATA', '_NAME'] + $
+    '/' + h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', '_NAME']+ $
+    '/' + h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', 'WAVELENGTH', '_NAME']
+  metadata.AddItem, 'wavelength', h5_getdata(h5['_FILE'], wavelength_key)
+  units = h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', 'WAVELENGTH', 'UNITS', '_DATA']
+  metadata.AddItem, 'wavelength units', units.CapWords()
 
   ; FWHM
-  metadata.AddItem, 'fwhm', h5_getdata(h5['_FILE'], '/' + h5['FWHM','_NAME'])
+  fwhm_key = '/' + h5[site, '_NAME'] + $
+    '/' + h5[site, 'REFLECTANCE', '_NAME'] + $
+    '/' + h5[site, 'REFLECTANCE', 'METADATA', '_NAME'] + $
+    '/' + h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', '_NAME']+ $
+    '/' + h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', 'FWHM', '_NAME']
+  metadata.AddItem, 'fwhm', h5_getdata(h5['_FILE'], fwhm_key)
   
-  AOPh5MetadataFactory._AddCommonRasterMetadata, h5, dataSetName, metadata
+  ; interleave 
+  ;metadata.AddItem, 'interleave', 'BIP'
+  
+  AOPh5MetadataFactory._AddCommonRasterMetadata, h5, data_set_name, metadata
 
   return, metadata
 end
@@ -181,11 +203,11 @@ end
 ; :Description:
 ;
 ;-
-function AOPh5MetadataFactory::_Class, h5, dataSetName
+function AOPh5MetadataFactory::_Class, h5, data_set_name
   compile_opt static, idl2
 
   metadata = envirastermetadata()
-  AOPh5MetadataFactory._AddCommonClassificationMetadata, h5, dataSetName, metadata
+  AOPh5MetadataFactory._AddCommonClassificationMetadata, h5, data_set_name, metadata
   return, metadata
 end
 
@@ -193,11 +215,11 @@ end
 ; :Description:
 ;
 ;-
-function AOPh5MetadataFactory::_Raster, h5, dataSetName
+function AOPh5MetadataFactory::_Raster, h5, data_set_name
   compile_opt static, idl2
 
   metadata = envirastermetadata()
-  AOPh5MetadataFactory._AddCommonRasterMetadata, h5, dataSetName, metadata
+  AOPh5MetadataFactory._AddCommonRasterMetadata, h5, data_set_name, metadata
   return, metadata
 
   return, 1
@@ -207,35 +229,31 @@ end
 ; :Description:
 ;
 ;-
-pro AOPh5MetadataFactory::_AddCommonRasterMetadata, h5, dataSetName, metadata
+pro AOPh5MetadataFactory::_AddCommonRasterMetadata, _h5, data_set_name, metadata
   compile_opt static, idl2
-
+  
+  keys = strsplit(strupcase(data_set_name), '/', /EXTRACT)
+  h5 = _h5
+  foreach key, keys do h5 = h5[key]
+  
   ; Scale factor
-  if ((h5[dataSetName]).haskey('SCALE_FACTOR')) then begin
-    metadata.AddItem, 'reflectance scale factor', h5[dataSetName,'SCALE_FACTOR','_DATA']
+  if (h5.haskey('SCALE_FACTOR')) then begin
+    metadata.AddItem, 'reflectance scale factor', h5['SCALE_FACTOR','_DATA']
   endif
     
   ; Description
-  if ((h5[dataSetName]).haskey('DESCRIPTION')) then begin
-    metadata.AddItem, 'description', h5[dataSetName,'DESCRIPTION','_DATA']
-  endif
-  
-  ; Sun angles
-  if (h5.haskey('SOLAR_AZIMUTH_ANGLE')) then begin
-    metadata.AddItem, 'sun azimuth', (h5['SOLAR_AZIMUTH_ANGLE','_DATA'])[0]
-  endif
-  if (h5.haskey('SOLAR_ZENITH_ANGLE')) then begin
-    metadata.AddItem, 'sun elevation', 90.0 - (h5['SOLAR_ZENITH_ANGLE','_DATA'])[0]
+  if (h5.haskey('DESCRIPTION')) then begin
+    metadata.AddItem, 'description', h5['DESCRIPTION','_DATA']
   endif
   
   ; data-ignore-value
-  if ((h5[dataSetName]).haskey('DATA_IGNORE_VALUE')) then begin
-    metadata.AddItem, 'data ignore value', fix(h5[dataSetName, 'DATA_IGNORE_VALUE', '_DATA'])
+  if (h5.haskey('DATA_IGNORE_VALUE')) then begin
+    metadata.AddItem, 'data ignore value', fix(h5['DATA_IGNORE_VALUE', '_DATA'])
   endif
   
   ; Units, if specified
-  if ((h5[dataSetName]).haskey('UNIT')) then begin
-    metadata.AddItem, 'data units', h5[dataSetName, 'UNIT', '_DATA']
+  if (h5.haskey('UNITS')) then begin
+    metadata.AddItem, 'data units', h5['UNITS', '_DATA']
   endif
 end
 
@@ -243,19 +261,23 @@ end
 ; :Description:
 ;
 ;-
-pro AOPh5MetadataFactory::_AddCommonClassificationMetadata, h5, dataSetName, metadata
+pro AOPh5MetadataFactory::_AddCommonClassificationMetadata, _h5, data_set_name, metadata
   compile_opt static, idl2
   
+  keys = strsplit(strupcase(data_set_name), '/', /EXTRACT)
+  h5 = _h5
+  foreach key, keys do h5 = h5[key]
+  
   ; Add class names and look-up-table (LUT)
-  classNames = (h5[dataSetName, 'CLASS_NAMES', '_DATA']).split(',')
-  classLookup = byte(fix((h5[dataSetName, 'CLASS_LOOKUP', '_DATA']).split(',')))
+  classNames = h5['CLASS_NAMES', '_DATA']
+  classLookup = byte(fix(h5['CLASS_LOOKUP', '_DATA']))
   classLookup = reform(classLookup, 3, classLookup.length/3)
   metadata.AddItem, 'classes', classNames.length
   metadata.AddItem, 'class names', classNames
   metadata.AddItem, 'class lookup', classLookup
   
   ; Add band name(s)
-  bandNames = [(h5[dataSetName, 'BAND_NAMES', '_DATA']).replace('/', '_')]
+  bandNames = h5['BAND_NAMES', '_DATA']
   metadata.AddItem, 'band names', bandNames
 end
 
