@@ -1,5 +1,9 @@
 # NEON-AOP-H5toENVI
 
+## Josh's Super Fun Disclaimer
+
+This is my own fork of what I originally posted years ago in the original NEON repo, fixed to work with the newer NEON AOP H5 format for maximum science-y good fun.  I've posted this new version in case anyone else finds it useful, but I make NO warranties about its accuracy or effectiveness.  Use at your own risk.  For a full liability statement, see the original LICENSE.txt which I am also adhering to.
+
 ## The NEON Airborne Observation Platform HDF5 ENVI Extension.
 
 This ENVI Extension is written in the IDL programming language, and is intended to read HDF5 formatted data files produced by the NEON Airborne Observation Platform.  These data can be acquired by here: http://www.neonscience.org/data-resources/get-data/airborne-data
