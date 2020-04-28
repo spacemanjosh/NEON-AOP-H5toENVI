@@ -152,6 +152,31 @@ function AOPh5MetadataFactory::CreateTime, h5
   return, 1
 end
 
+;-------------------------------------------------------------------------------
+;+
+; :Description:
+;   Create the so called "bad bands list", which according to their documentation:
+;     "... multiplier values of each band in an image, 
+;      typically 0 for bad bands and 1 for good bands."
+;      
+; :Params:
+;    h5 [in, req, Hash] : h5 file structure, Hash() object.
+;-
+function AOPh5MetadataFactory::_BBL, h5, wavelengths
+  compile_opt static, idl2
+  
+  ; Get the site key
+  site = _find_site_key(h5)
+  
+  bad_bands_window_1 = h5[site, 'REFLECTANCE', 'BAND_WINDOW_1_NANOMETERS', '_DATA']
+  bad_bands_window_2 = h5[site, 'REFLECTANCE', 'BAND_WINDOW_2_NANOMETERS', '_DATA']
+
+  bbl1 = (wavelengths le bad_bands_window_1[0]) or (bad_bands_window_1[1] le wavelengths)
+  bbl2 = (wavelengths le bad_bands_window_2[0]) or (bad_bands_window_2[1] le wavelengths)
+  bbl = bbl1 and bbl2
+  
+  return, bbl
+end
 
 ;-------------------------------------------------------------------------------
 ;+
@@ -172,27 +197,27 @@ function AOPh5MetadataFactory::_Reflectance, h5, data_set_name
   
   ; Get the site key
   site = _find_site_key(h5)
-
-  ; Wavelength / Spectral Radiance Bands
-  wavelength_key = '/' + h5[site, '_NAME'] + $
+  
+  ; Metadata key
+  metadata_key = '/' + h5[site, '_NAME'] + $
     '/' + h5[site, 'REFLECTANCE', '_NAME'] + $
     '/' + h5[site, 'REFLECTANCE', 'METADATA', '_NAME'] + $
-    '/' + h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', '_NAME']+ $
+    '/' + h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', '_NAME']
+
+  ; Wavelength
+  wavelength_key = metadata_key + $
     '/' + h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', 'WAVELENGTH', '_NAME']
   metadata.AddItem, 'wavelength', h5_getdata(h5['_FILE'], wavelength_key)
   units = h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', 'WAVELENGTH', 'UNITS', '_DATA']
   metadata.AddItem, 'wavelength units', units.CapWords()
 
   ; FWHM
-  fwhm_key = '/' + h5[site, '_NAME'] + $
-    '/' + h5[site, 'REFLECTANCE', '_NAME'] + $
-    '/' + h5[site, 'REFLECTANCE', 'METADATA', '_NAME'] + $
-    '/' + h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', '_NAME']+ $
+  fwhm_key = '/' + metadata_key + $
     '/' + h5[site, 'REFLECTANCE', 'METADATA', 'SPECTRAL_DATA', 'FWHM', '_NAME']
   metadata.AddItem, 'fwhm', h5_getdata(h5['_FILE'], fwhm_key)
   
-  ; interleave 
-  ;metadata.AddItem, 'interleave', 'BIP'
+  ; Bad bands list
+  metadata.AddItem, 'bbl', AOPh5MetadataFactory._BBL(h5, metadata['wavelength'])
   
   AOPh5MetadataFactory._AddCommonRasterMetadata, h5, data_set_name, metadata
 
